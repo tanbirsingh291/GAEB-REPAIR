@@ -620,7 +620,7 @@ def apply_neutralization(text, rules):
     Nutzt 'brands' und 'neutralizers' aus der rules.json.
     """
     if not text: return ""
-    modified_text = text
+    modified = text
     brands = rules.get("brands", []) #
     neutralizer = rules.get("neutralizers", ["o. glw."])[0] #
     
