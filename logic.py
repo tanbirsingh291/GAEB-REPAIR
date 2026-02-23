@@ -71,7 +71,13 @@ class AuditReport:
         self.entries: List[AuditEntry] = []
         self.stats = {Severity.GREEN: 0, Severity.YELLOW: 0, Severity.RED: 0}
         self.total_positions = 0
-        self.is_diagnose_mode = True         
+        self.is_diagnose_mode = True    
+
+    def clear(self):
+        """Setzt den Report für eine neue Diagnose komplett zurück."""
+        self.entries = []
+        self.stats = {Severity.GREEN: 0, Severity.YELLOW: 0, Severity.RED: 0}
+        self.total_positions = 0         
 
     def add_finding(self, pos_id: str, issue: str, solution: str, confidence: float, sev_override: Optional[Severity] = None):
         """
@@ -203,14 +209,10 @@ class Gaeb90Parser:
         self.rules = rules or RuleManager.get_rules(self.audit)
     
     def diagnose(self, content):
-        """
-        Der 5-Sekunden-Check: Scannt die Datei auf strukturelle Integrität.
-        Keine Änderungen, nur Analyse der Ampel-Status.
-        """
-        self.audit.clear()
+        """Der 5-Sekunden-Check."""
+        self.audit.clear() # Jetzt klappt's!
         lines = content.splitlines() if isinstance(content, str) else content
         
-        # GAEB-Metadaten für die Schnell-Info (Sekunde 5)
         file_info = {
             "format": "GAEB90", 
             "positions": 0,
@@ -219,35 +221,30 @@ class Gaeb90Parser:
 
         for line in lines:
             ln = line.ljust(80)
-            
-            # 1. Positions-Zählung & OZ-Check
             if ln.startswith("43"):
                 file_info["positions"] += 1
                 oz = ln[2:11].strip()
-                # OZ-Lücken sind immer ROT
-                self._check_oz_gap_diagnose(oz) 
+                # Wir nutzen die existierende OZ-Prüfung
+                self._check_oz_gap(oz) 
                 
-            # 2. Einheiten-Check (Vorschau)
             elif ln.startswith("44"):
+                # Wir nutzen die 95%-Logik für Einheiten
                 unit_str = ln[30:34].strip()
                 if not unit_str:
-                    # Hier greift die 95%-Regel aus der rules.json
-                    self._analyze_unit_confidence(ln, "UNBEKANNT")
+                    # Hier rufen wir die Sicherheits-Prüfung auf
+                    self._analyze_unit_confidence(ln, "Unbekannt")
 
         return file_info
 
     def _analyze_unit_confidence(self, line_context, pos_id):
-        """
-        Prüft, ob wir eine Einheit sicher (GELB) oder unsicher (ROT) heilen können.
-        """
-        # Simulierter NLP-Check basierend auf rules.json
-        # Wenn 'm2' im Text steht, aber das Feld leer ist -> 96% Sicherheit
-        confidence = self._calculate_unit_probability(line_context) 
+        """Berechnet die Sicherheit für fehlende Einheiten."""
+        # Wir nutzen die Funktion, die wir für Jürgen gebaut haben
+        unit, confidence = detect_unit_confidence(line_context, self.rules)
         
-        if confidence >= 0.95:
-            self.audit.add_finding(pos_id, "Einheit fehlt", "Setze m² (96% sicher)", confidence)
+        if unit:
+            self.audit.add_finding(pos_id, "Einheit fehlt", f"Setze {unit}", confidence)
         else:
-            self.audit.add_finding(pos_id, "Einheit fehlt", "MANUELL PRÜFEN", confidence)
+            self.audit.add_finding(pos_id, "Einheit fehlt", "MANUELL PRÜFEN", 0.50)
 
     def _is_init(self, val):
         v = re.sub(r'^0+', '', val.strip().upper())
