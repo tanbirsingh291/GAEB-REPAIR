@@ -771,4 +771,4 @@ def generate_real_pdf(audit):
             pdf.cell(20, 10, e.severity.value, 1)
             pdf.cell(90, 10, str(e.solution)[:50], 1, 1)
             
-    return pdf.output(dest='S').encode('latin-1')    
+    return pdf.output()
