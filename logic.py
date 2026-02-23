@@ -137,13 +137,19 @@ class AuditReport:
         } for e in sorted_entries[:10]]
     
     def get_browser_summary(self):
-        """Top 10 für die Sekunde 60."""
-        
+        """Top 10 Zusammenfassung für das Dashboard."""
+        # Filtere nur relevante Änderungen (GELB und ROT)
         interesting = [e for e in self.entries if e.severity != Severity.GREEN]
-        sorted_entries = sorted(interesting, key=lambda x: (x.severity != Severity.RED, x.confidence))
+        
+        # Sortierung: Kritische Fehler (ROT) nach oben
+        sorted_entries = sorted(
+            interesting, 
+            key=lambda x: (x.severity != Severity.RED, x.confidence)
+        )
+        
         return [{
             "pos": e.pos_id,
-            "status": e.status.value, # Fix: status -> severity
+            "status": e.severity.value, # FIX: Hier hieß es vorher e.status.value
             "issue": e.issue,
             "solution": e.solution,
             "confidence": f"{int(e.confidence * 100)}%"
