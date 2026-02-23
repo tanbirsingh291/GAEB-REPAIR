@@ -1,69 +1,73 @@
 import streamlit as st
-import json
-from logic import Gaeb90Parser, AuditReport, Severity, apply_neutralization, fix_units_with_95_percent_guard, ZipManager
+import time
+import io
+from logic import Gaeb90Parser, RuleManager, repair_stream_generator, ZipManager, Severity
 
-st.set_page_config(page_title="Sovereign AI - GAEB Repair", layout="wide")
+# Seite konfigurieren
+st.set_page_config(page_title="GAEB Sovereign Repair", page_icon="🏗️")
 
-# 1. Setup & Konfiguration
-with open("rules.json", "r", encoding="utf-8") as f:
-    rules = json.load(f)
+st.title("🏗️ GAEB Sovereign Repair Engine")
+st.markdown("---")
 
-st.title("🏗️ GAEB-Reparatur Dashboard")
-st.write("Neutralisierung von Marken und Heilung von Einheiten nach der 95%-Regel.")
-
-# 2. File Upload
-uploaded_file = st.file_uploader("Lade eine GAEB-Datei hoch (.d83)", type=["d83"])
+# 1. DER WORKFLOW: Sekunde 0-5 (Drag & Drop)
+uploaded_file = st.file_uploader("Zieh deine kaputte GAEB-Datei hier rein", type=["d83", "x83", "p83"])
 
 if uploaded_file:
-    content = uploaded_file.getvalue().decode("utf-8")
-    audit = AuditReport()
-    parser = Gaeb90Parser(audit=audit, rules=rules)
-    
-    # Verarbeitung starten
-    with st.spinner('Engine analysiert die Datei...'):
-        items = list(parser.parse_string(content))
-        processed_items = []
+    # Lade Regeln & Parser
+    rules = RuleManager.get_rules()
+    content = uploaded_file.getvalue().decode("cp850") # Default GAEB-Encoding
+    parser = Gaeb90Parser(rules=rules)
+
+    # 2. DIAGNOSE: Sekunde 5-10 (Schnell-Check)
+    with st.status("Analysiere Datei...", expanded=True) as status:
+        diag_info = parser.diagnose(content)
+        st.write(f"✓ Datei erkannt: {uploaded_file.name} ({diag_info['positions']} Positionen)")
         
-        for it in items:
-            # Simulation der Text-Analyse für den Stress-Test
-            # Hier greifen wir auf die Marken aus rules.json zu (z.B. Hilti, Knauf)
-            pos_id = it['id']
-            # Hinweis: In der echten App würde hier der Text aus SA45/46 extrahiert
-            original_text = "Beispieltext mit Hilti" if "02" in pos_id else "Beton lieferung" 
-            
-            # Neutralisierung anwenden
-            clean_text = apply_neutralization(original_text, rules)
-            
-            # Einheit heilen (95%-Regel)
-            fixed_unit = fix_units_with_95_percent_guard(original_text, None, rules, audit, pos_id)
-            
-            processed_items.append({"id": pos_id, "text": clean_text, "unit": fixed_unit})
+        # Ampel-Display
+        col1, col2, col3 = st.columns(3)
+        col1.metric("🔴 ROT", f"{parser.audit.stats[Severity.RED]} Kritisch")
+        col2.metric("🟡 GELB", f"{parser.audit.stats[Severity.YELLOW]} Warnungen")
+        col3.metric("🟢 GRÜN", f"{parser.audit.stats[Severity.GREEN]} OK")
+        status.update(label="Diagnose abgeschlossen!", state="complete")
 
-    # 3. Anzeige der Ergebnisse (Ampel-System)
-    col1, col2, col3 = st.columns(3)
-    summary = audit.generate_summary()
-    col1.metric("Kritisch (ROT)", summary['critical'])
-    col2.metric("Warnungen (GELB)", summary['warnings'])
-    col3.metric("Info (GRÜN)", summary['info'])
-
-    # Top 10 Korrekturen im Browser-Preview
-    st.subheader("Top 10 Audit-Findings")
-    preview = audit.get_browser_preview()
-    if preview:
-        st.table(preview)
-    else:
-        st.success("Keine kritischen Fehler gefunden!")
-
-    # 4. Download der reparierten Datei
-    # Hier nutzen wir den ZipManager, um das Paket aus repaired.d83 und Audit.pdf zu packen
-    st.subheader("Download")
-    # (Platzhalter für den tatsächlichen Datei-Export-String)
-    repaired_content = "GAEB-REPAIRED-CONTENT" 
-    zip_buffer = ZipManager.create_package(uploaded_file.name, repaired_content, audit)
+    st.markdown("---")
     
-    st.download_button(
-        label="Repariertes Paket herunterladen (ZIP)",
-        data=zip_buffer,
-        file_name=f"Reparatur_{uploaded_file.name}.zip",
-        mime="application/zip"
-    )
+    # 3. ENTSCHEIDUNG: Jürgens 3 Hauptschalter
+    st.subheader("Was soll repariert werden?")
+    opt_neutralize = st.checkbox("Herstellernamen automatisch neutralisieren", value=True)
+    opt_units = st.checkbox("Fehlende Einheiten ergänzen (>95% Sicherheit)", value=True)
+    opt_oz = st.checkbox("OZ-Konflikte automatisch korrigieren", value=True)
+
+    user_options = {
+        "neutralize": opt_neutralize,
+        "fix_units": opt_units,
+        "fix_oz": opt_oz
+    }
+
+    if st.button("🚀 JETZT REPARIEREN"):
+        # 4. REPARATUR: Sekunde 15-60 (Live-Feedback)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        log_area = st.empty()
+
+        for update in repair_stream_generator(content, user_options, rules):
+            if "percent" in update:
+                progress_bar.progress(update["percent"])
+                status_text.text(update["last_action"])
+                # Live-Counter-Update oben rechts simulieren
+            
+            if update.get("status") == "FINISHED":
+                st.success("Reparatur abgeschlossen!")
+                
+                # 5. RESULTAT: Top 10 Vorschau & Download
+                st.subheader("=== TOP 10 ÄNDERUNGEN ===")
+                st.table(update["report"])
+                
+                # ZIP-Paket schnüren
+                zip_data = ZipManager.create_package(uploaded_file.name, content, parser.audit)
+                st.download_button(
+                    label="📥 DOWNLOAD ZIP-PAKET",
+                    data=zip_data,
+                    file_name=f"{uploaded_file.name}_repariert.zip",
+                    mime="application/zip"
+                )
