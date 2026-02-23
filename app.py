@@ -25,14 +25,27 @@ if uploaded_file:
         ampel_placeholder = st.empty()
         
         def render_ampel(stats):
-            with ampel_placeholder.container():
-                c1, c2, c3 = st.columns(3)
-                c1.metric("🔴 ROT", f"{stats[Severity.RED]} Kritisch")
-                c2.metric("🟡 GELB", f"{stats[Severity.YELLOW]} Warnungen")
-                c3.metric("🟢 GRÜN", f"{stats[Severity.GREEN]} OK")
+            """
+            Robustes Ampel-Display, das Enum-Keys und String-Keys versteht.
+            """
+            # Helfer, um den Wert sicher zu finden
+            def get_val(sev):
+            # Probiert erst das Enum-Objekt, falls das fehlschlägt, den String-Wert
+                return stats.get(sev, stats.get(sev.value, 0))
+                col1, col2, col3 = st.columns(3)
+            # Wir nutzen jetzt die get_val Funktion für absolute Sicherheit
+            col1.metric("🔴 ROT", f"{get_val(Severity.RED)} Kritisch")
+            col2.metric("🟡 GELB", f"{get_val(Severity.YELLOW)} Warnungen")
+            col3.metric("🟢 GRÜN", f"{get_val(Severity.GREEN)} OK")
 
-        render_ampel(parser.audit.stats)
-        status.update(label="Diagnose abgeschlossen!", state="complete")
+# --- In der Diagnose-Sektion (Sekunde 5-10) ---
+with st.status("Analysiere Datei...", expanded=True) as status:
+    diag_info = parser.diagnose(content)
+    st.write(f"✓ Datei erkannt: {uploaded_file.name} ({diag_info['positions']} Positionen)")
+    
+    # Aufruf der Ampel mit den frischen Diagnose-Daten
+    render_ampel(parser.audit.stats)
+    status.update(label="Diagnose abgeschlossen!", state="complete")
 
     st.markdown("---")
     
