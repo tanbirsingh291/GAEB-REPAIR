@@ -1,0 +1,34 @@
+{
+  "brands": [
+    "Knauf", "Rigips", "Saint-Gobain", "Hilti", "Geberit", "Villeroy & Boch", "Duravit", 
+    "Hansgrohe", "Grohe", "Buderus", "Viessmann", "Vaillant", "Schüco", "Sto", "Caparol", 
+    "Brillux", "Isover", "Rockwool", "Bosch", "Makita", "Jung", "Gira", "Busch-Jaeger", 
+    "Siemens", "ABB", "Stiebel Eltron", "Wilo", "Grundfos", "Sika", "PCI", "Ardex", 
+    "Ytong", "Xella", "Wienerberger", "Bauder", "Viega", "Müller", "Hörmann", "Hilti", "Knauf", "Soprema", "Velux", "Roto", "Hörmann", 
+    "Lindner", "Doka", "Peri", "Putzmeister", "Liebherr", "JCB", "Caterpillar", 
+    "Wacker Neuson", "Bomag", "Daikin", "Mitsubishi Electric"
+  ],
+  "neutralizers": [
+    "oder gleichwertig", "o. glw.", "o.glw", "o. gl.", "glw.", 
+    "oder gleichwertiger Art", "gleichwertiger Art", "oder gleichwertig", "Herstellerneutral"
+  ],
+  "unit_inference_rules": {
+    "m": ["m", "lfm", "meter", "m."],
+    "Stk": ["st", "stk", "stück", "st.", "stck", "St", "St."],
+    "m2": ["fliesen", "belag", "putz", "farbe", "tapete", "bodenfliesen", "m2", "qm", "quadratmeter", "m²"],
+    "StWo": ["stwo", "stck woche", "stk.w."],
+    "m3": ["beton", "kies", "aushub", "erde", "m3", "cbm", "kubikmeter", "m³"],
+    "kg": ["stahl", "bewehrung", "träger",  "kg", "kilogramm"],
+    "psch": ["psch", "pauschal", "ps.", "pau.", "pausch", "Ps", "pauschale", "einrichtung", "baustelleneinrichtung"],
+    "h": ["h", "std", "stunden", "std.", "hrs"],
+    "t": ["t", "to", "tonne", "tonnen", "to."],
+  "cleanup_keywords": ["Viega", "Müller", "Hilti"] 
+  },
+  "encodings": {
+    "priority": ["utf-8", "cp850", "cp1252"],
+    "critical_bytes": {
+      "0xfc": "³", "0xfd": "²", "0x84": "ä", "0x94": "ö", 
+      "0x81": "ü", "0x8e": "Ä", "0x99": "Ö", "0x9a": "Ü", "0xe1": "ß"
+    }
+  }
+}
