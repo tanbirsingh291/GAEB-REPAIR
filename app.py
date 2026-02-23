@@ -45,29 +45,38 @@ if uploaded_file:
     }
 
     if st.button("🚀 JETZT REPARIEREN"):
-        # 4. REPARATUR: Sekunde 15-60 (Live-Feedback)
+        # Platzhalter für das Ergebnis der Reparatur
+        repaired_file_content = None
+        
         progress_bar = st.progress(0)
         status_text = st.empty()
-        log_area = st.empty()
-
+        
+        # 4. REPARATUR-SCHLEIFE: Wir konsumieren den Generator
         for update in repair_stream_generator(content, user_options, rules):
             if "percent" in update:
                 progress_bar.progress(update["percent"])
                 status_text.text(update["last_action"])
-                # Live-Counter-Update oben rechts simulieren
             
+            # Wenn der Generator fertig ist, fangen wir den Inhalt ab
             if update.get("status") == "FINISHED":
+                repaired_file_content = update.get("repaired_content")
                 st.success("Reparatur abgeschlossen!")
                 
-                # 5. RESULTAT: Top 10 Vorschau & Download
-                st.subheader("=== TOP 10 ÄNDERUNGEN ===")
+                # 5. RESULTAT: Die 'Top 10' Liste für Jürgen
+                st.subheader("=== TOP 10 ÄNDERUNGEN (PRÜFPFLICHTIG) ===")
                 st.table(update["report"])
                 
-                # ZIP-Paket schnüren
-                zip_data = ZipManager.create_package(uploaded_file.name, content, parser.audit)
+                # Das ZIP-Paket wird JETZT mit den echten Daten geschnürt
+                zip_buffer = ZipManager.create_package(
+                    original_filename=uploaded_file.name, 
+                    repaired_content=repaired_file_content, 
+                    audit=parser.audit
+                )
+                
+                # Der finale Button
                 st.download_button(
-                    label="📥 DOWNLOAD ZIP-PAKET",
-                    data=zip_data,
-                    file_name=f"{uploaded_file.name}_repariert.zip",
+                    label="📥 DOWNLOAD ZIP (Reparierte Datei + Report)",
+                    data=zip_buffer,
+                    file_name=f"{uploaded_file.name}_repaired_package.zip",
                     mime="application/zip"
                 )
