@@ -593,7 +593,8 @@ def repair_stream_generator(file_content, user_options, rules):
     yield {
         "status": "FINISHED", 
         "repaired_content": final_content, 
-        "report": audit.get_browser_summary()
+        "report": audit.get_browser_summary(),
+        "final_audit": audit
     }
 
 def apply_neutralization(text, rules):
