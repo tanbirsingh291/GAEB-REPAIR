@@ -59,23 +59,24 @@ if uploaded_file:
             
             if update.get("status") == "FINISHED":
                 repaired_file_content = update.get("repaired_content")
+                # Wir nehmen den echten Audit-Report der Reparatur
+                final_audit_report = update.get("final_audit") 
+                
                 st.success("Reparatur abgeschlossen!")
                 
-                # 5. RESULTAT: Top 10 & Download 
-                st.subheader("=== TOP 10 ÄNDERUNGEN ===")
+                st.subheader("=== TOP 10 ÄNDERUNGEN (PRÜFPFLICHTIG) ===")
                 st.table(update["report"])
                 
-                # WICHTIG: Wir nutzen hier das fertige Audit-Objekt aus dem Generator-Finale 
-                # (Hier müsste die logic.py das Audit-Objekt im FINISHED-Status mitliefern)
+                # Jetzt hat der ZipManager alles, was er braucht
                 zip_buffer = ZipManager.create_package(
                     original_filename=uploaded_file.name, 
                     repaired_content=repaired_file_content, 
-                    audit=parser.audit # Der Parser-Audit wurde im Generator befüllt
+                    audit=final_audit_report
                 )
                 
                 st.download_button(
-                    label="📥 DOWNLOAD ZIP (Reparierte Datei + Report)",
+                    label="📥 DOWNLOAD ZIP-PAKET",
                     data=zip_buffer,
-                    file_name=f"{uploaded_file.name}_repaired_package.zip",
+                    file_name=f"{uploaded_file.name}_repariert.zip",
                     mime="application/zip"
                 )
