@@ -582,7 +582,7 @@ def repair_stream_generator(file_content, user_options, rules):
         if i % 20 == 0:
             yield {
                 "percent": int((i / total) * 100),
-                "stats": {k.value: v for k, v in audit.stats.items()},
+                "stats": audit.stats.copy(),
                 "last_action": f"Verarbeite Position {current_oz}..."
             }
     
