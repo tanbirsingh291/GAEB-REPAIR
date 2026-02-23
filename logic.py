@@ -138,16 +138,16 @@ class AuditReport:
     
     def get_browser_summary(self):
         """Top 10 für die Sekunde 60."""
-        critical = [e for e in self.entries if e.severity == Severity.RED]
-        warnings = [e for e in self.entries if e.severity == Severity.YELLOW]
-        top_10 = (critical + warnings)[:10]
+        
+        interesting = [e for e in self.entries if e.severity != Severity.GREEN]
+        sorted_entries = sorted(interesting, key=lambda x: (x.severity != Severity.RED, x.confidence))
         return [{
             "pos": e.pos_id,
             "status": e.status.value, # Fix: status -> severity
             "issue": e.issue,
             "solution": e.solution,
             "confidence": f"{int(e.confidence * 100)}%"
-        } for e in top_10]
+        } for e in sorted_entries[:10]]
 
     def get_top_10(self) -> List[AuditEntry]:
         """Filtert die 10 kritischsten Fälle für Jürgens Browser-Vorschau."""
@@ -282,7 +282,15 @@ class Gaeb90Parser:
                     if not self._is_init(c[j]): gap = True; break
             else: gap = True
 
-            if gap: self.audit.add_error(f"OZ-Lücke detektiert: {self.last_oz} -> {oz}")
+            if gap: 
+                # FIX: add_finding statt add_error nutzen
+                self.audit.add_finding(
+                    pos_id=oz, 
+                    issue=f"OZ-Lücke detektiert: {self.last_oz} -> {oz}", 
+                    solution="Struktur manuell prüfen", 
+                    confidence=0.0, # OZ-Lücken sind Fakten, kein Raten
+                    sev_override=Severity.RED # Das muss immer Rot sein
+                )
         self.last_oz = oz
 
     def parse_string(self, content):
@@ -530,23 +538,23 @@ class GaebXmlParser:
         return {'project_name': prj.text if prj is not None else "Unbekannt", 'items': items}
     
 def repair_stream_generator(file_content, user_options, rules):
-    """Live-Streaming für den Fortschrittsbalken."""
     audit = AuditReport()
     lines = file_content.splitlines()
     total = len(lines)
     repaired_lines = []
+    current_pos_id = "000"
 
     for i, line in enumerate(lines):
         ln = line.ljust(80)
-        new_line = ln
-
-        # Beispiel: Wir finden eine Position (SA43)
+        # Jürgens Regel: Nur ändern, wenn Schalter an ist
         if ln.startswith("43"):
-            pos_id = ln[2:11].strip()
-            audit.total_positions += 1
-            # Hier käme die Text-Logik für Neutralisierung & Einheiten...
+            current_pos_id = ln[2:11].strip()
         
-        repaired_lines.append(new_line)
+        # Neutralisierung anwenden
+        if user_options.get("neutralize") and ln.startswith(("45", "46")):
+            ln = apply_neutralization(ln, rules)
+            
+        repaired_lines.append(ln[:80]) # Kürzen auf 80 Zeichen Pflicht!
 
         if i % 20 == 0:
             yield {
@@ -555,7 +563,13 @@ def repair_stream_generator(file_content, user_options, rules):
                 "last_action": f"Verarbeite Zeile {i}..."
             }
     
-    yield {"status": "FINISHED", "report": audit.get_browser_summary()}
+    # Das ist entscheidend: Der fertige String für den ZipManager
+    final_content = "\r\n".join(repaired_lines)
+    yield {
+        "status": "FINISHED", 
+        "repaired_content": final_content, 
+        "report": audit.get_browser_preview()
+    }
 
 def apply_neutralization(text, rules):
     """
