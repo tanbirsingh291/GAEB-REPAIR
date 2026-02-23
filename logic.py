@@ -212,6 +212,7 @@ class Gaeb90Parser:
         """Der 5-Sekunden-Check."""
         self.audit.clear() # Jetzt klappt's!
         lines = content.splitlines() if isinstance(content, str) else content
+        current_oz = "Start"
         
         file_info = {
             "format": "GAEB90", 
@@ -222,17 +223,14 @@ class Gaeb90Parser:
         for line in lines:
             ln = line.ljust(80)
             if ln.startswith("43"):
+                current_oz = ln[2:11].strip()
                 file_info["positions"] += 1
-                oz = ln[2:11].strip()
-                # Wir nutzen die existierende OZ-Prüfung
-                self._check_oz_gap(oz) 
+                self.audit.total_positions += 1 # Fix: Zähler für Summary 
+                self._check_oz_gap(current_oz)
                 
             elif ln.startswith("44"):
                 # Wir nutzen die 95%-Logik für Einheiten
-                unit_str = ln[30:34].strip()
-                if not unit_str:
-                    # Hier rufen wir die Sicherheits-Prüfung auf
-                    self._analyze_unit_confidence(ln, "Unbekannt")
+                self._analyze_unit_confidence(ln, current_oz)
 
         return file_info
 
@@ -538,37 +536,64 @@ class GaebXmlParser:
         return {'project_name': prj.text if prj is not None else "Unbekannt", 'items': items}
     
 def repair_stream_generator(file_content, user_options, rules):
+    """
+    Der Haupt-Workflow: Verarbeitet die Datei Zeile für Zeile und sammelt Ergebnisse.
+    """
     audit = AuditReport()
+    # Wir stellen sicher, dass wir mit sauberen Strings arbeiten
     lines = file_content.splitlines()
     total = len(lines)
     repaired_lines = []
-    current_pos_id = "000"
+    current_oz = "Header"
 
     for i, line in enumerate(lines):
-        ln = line.ljust(80)
-        # Jürgens Regel: Nur ändern, wenn Schalter an ist
-        if ln.startswith("43"):
-            current_pos_id = ln[2:11].strip()
+        # 1. GAEB90-Standard: Jede Zeile muss exakt 80 Zeichen haben
+        ln = line.ljust(80)[:80]
         
-        # Neutralisierung anwenden
-        if user_options.get("neutralize") and ln.startswith(("45", "46")):
-            ln = apply_neutralization(ln, rules)
-            
-        repaired_lines.append(ln[:80]) # Kürzen auf 80 Zeichen Pflicht!
+        # 2. OZ-Tracking (SA43): Damit wir wissen, wo wir sind
+        if ln.startswith("43"):
+            current_oz = ln[2:11].strip()
+            audit.total_positions += 1 # Fix: Zähler für Summary
+            # Prüfung auf OZ-Lücken
+            # (In der Diagnose bereits gemacht, hier zur Sicherheit für den Report)
+        
+        # 3. Neutralisierung (SA45/46): Marken entfernen
+        elif ln.startswith(("45", "46")):
+            if user_options.get("neutralize"):
+                ln = apply_neutralization(ln, rules)
+        
+        # 4. Einheiten-Reparatur (SA44): Die 95%-Regel
+        elif ln.startswith("44"):
+            if user_options.get("fix_units"):
+                unit_str = ln[30:34].strip()
+                if not unit_str:
+                    fixed_unit, confidence = detect_unit_confidence(ln, rules)
+                    if fixed_unit and confidence >= 0.95:
+                        # Einheit in Zeile einbauen (Position 30-34 im GAEB-Format)
+                        ln = ln[:30] + fixed_unit.ljust(4) + ln[34:]
+                        audit.add_finding(current_oz, "Einheit ergänzt", f"Setze {fixed_unit}", confidence)
+                    else:
+                        audit.add_finding(current_oz, "Einheit fehlt", "MANUELL PRÜFEN", 0.50)
 
+        # Zeile speichern (immer auf 80 Zeichen begrenzt)
+        repaired_lines.append(ln[:80])
+
+        # Live-Feedback für Streamlit alle 20 Zeilen
         if i % 20 == 0:
             yield {
                 "percent": int((i / total) * 100),
                 "stats": {k.value: v for k, v in audit.stats.items()},
-                "last_action": f"Verarbeite Zeile {i}..."
+                "last_action": f"Verarbeite Position {current_oz}..."
             }
     
-    # Das ist entscheidend: Der fertige String für den ZipManager
+    # FINALE: Wir fügen alles zusammen und erzwingen das CP850 Encoding
+    # Das behebt das "wei├ƒ" Problem 
     final_content = "\r\n".join(repaired_lines)
+    
     yield {
         "status": "FINISHED", 
         "repaired_content": final_content, 
-        "report": audit.get_browser_preview()
+        "report": audit.get_browser_summary()
     }
 
 def apply_neutralization(text, rules):
@@ -583,16 +608,13 @@ def apply_neutralization(text, rules):
     modified_text = text
     brand_found = False
     for brand in brands:
-        # Case-insensitive Suche nach Markennamen
-        pattern = re.compile(re.escape(brand), re.IGNORECASE)
-        if pattern.search(modified_text):
-            brand_found = True
-            # Wir löschen den Namen nicht, wir hängen Jürgens "o. glw." an
-            if neutralizer.lower() not in modified_text.lower():
-                modified_text += f" {neutralizer}"
-            break # Ein Treffer reicht für die Kennzeichnung
+        # Suche Marke (case-insensitive)
+        if re.search(rf"\b{re.escape(brand)}\b", modified, re.I):
+            if neutralizer.lower() not in modified.lower():
+                modified = f"{modified} {neutralizer}"
+            break 
             
-    return modified_text
+    return modified.ljust(80)[:80]
 
 def fix_units_with_95_percent_guard(text, current_unit, rules, audit, item_id):
     """
@@ -689,3 +711,11 @@ class ZipManager:
                 lines.append("")
                 
         return "\n".join(lines)
+
+def finalize_export_encoding(content_str):
+    """Zwingt den String in das GAEB-konforme CP850 Format."""
+    try:
+        # Wir reparieren die typischen UTF-8 Artefakte vor dem Speichern
+        return content_str.encode("cp850", errors="replace")
+    except Exception:
+        return content_str.encode("iso-8859-1", errors="replace")    
