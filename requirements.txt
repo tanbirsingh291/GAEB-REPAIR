@@ -1,4 +1,5 @@
 streamlit
 decimal
 google-generativeai
-fpdf
+pandas
+fpdf2
