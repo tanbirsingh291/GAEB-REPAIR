@@ -619,11 +619,12 @@ def apply_neutralization(text, rules):
     Schalter 1: Herstellernamen neutralisieren.
     Nutzt 'brands' und 'neutralizers' aus der rules.json.
     """
-    if not text: return text
+    if not text: return ""
+    modified_text = text
     brands = rules.get("brands", []) #
     neutralizer = rules.get("neutralizers", ["o. glw."])[0] #
     
-    modified_text = text
+    
     brand_found = False
     for brand in brands:
         # Suche Marke (case-insensitive)
@@ -664,6 +665,8 @@ def fix_units_with_95_percent_guard(text, current_unit, rules, audit, item_id):
 def detect_unit_confidence(text, rules):
     """Kern der 95%-Regel für Einheiten."""
     inf_rules = rules.get("unit_inference_rules", {})
+    if not text or not inf_rules:
+        return None, 0.50
     matches = []
     for unit, keywords in inf_rules.items():
         if any(k.lower() in text.lower() for k in keywords):
