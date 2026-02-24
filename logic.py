@@ -543,7 +543,8 @@ class GaebXmlParser:
         return {'project_name': prj.text if prj is not None else "Unbekannt", 'items': items}
     
 def repair_stream_generator(file_content, user_options, rules):
-    from logic import AuditReport # Lokaler Import falls nötig
+    """Haupt-Engine: Jetzt mit korrekter Variablen-Initialisierung."""
+    from logic import AuditReport 
     audit = AuditReport()
     lines = file_content.splitlines()
     repaired_lines = []
@@ -552,43 +553,38 @@ def repair_stream_generator(file_content, user_options, rules):
     for i, line in enumerate(lines):
         ln = line.ljust(80)[:80]
         
-        # FIX: SA 43 - Marken-Interceptor für Kurztexte
+        # SA 43: OZ-Tracking & Marken-Check
         if ln.startswith("43"):
             current_oz = ln[2:11].strip() or "Strukturfehler"
             audit.total_positions += 1
             if user_options.get("neutralize"):
-                prefix = ln[:11] # SA + OZ schützen
+                prefix = ln[:11] 
                 text_part = ln[11:]
-                neutralized = apply_neutralization(text_part, rules)
-                ln = (prefix + neutralized).ljust(80)[:80]
+                ln = (prefix + apply_neutralization(text_part, rules)).ljust(80)[:80]
 
-        # FIX: SA 44 - Heilung der Einheiten-Blindheit
-        # FIX: SA 44 - Heilung der Einheiten-Blindheit
+        # SA 44: Einheiten-Logik (Displacement-Check)
         elif ln.startswith("44"):
-            # 1. Check Standard-Position (30-34)
-            detected_unit, confidence = detect_unit_confidence(ln, rules)
+            # FIX: Variable 'existing_unit' definieren, bevor sie genutzt wird!
+            field_unit = ln[30:34].strip()
+            # Wir machen einen Deep-Scan über die ganze Zeile
+            found_unit, confidence = detect_unit_confidence(ln, rules)
             
-            # 2. Vicious-Scan: Wenn 30-34 leer ist, suchen wir in der restlichen Zeile
-            if not existing_unit:
-                known_units = rules.get("unit_inference_rules", {}).keys()
-                for unit in known_units:
-                    if unit.lower() in ln.lower():
-                        existing_unit = unit # Einheit gefunden!
-                        break
+            # Eine Einheit gilt als vorhanden, wenn sie im Feld steht ODER 
+            # wenn der Deep-Scan einen extrem sicheren Treffer (0.99) landet
+            existing_unit = field_unit or (found_unit if confidence >= 0.99 else None)
 
             if user_options.get("fix_units"):
-                if not existing_unit: # NUR wenn wirklich nirgends eine Einheit steht
-                    unit, conf = detect_unit_confidence(ln, rules)
-                    if unit and conf >= 0.95:
-                        ln = ln[:30] + unit.ljust(4) + ln[34:]
-                        audit.add_finding(current_oz, "Einheit ergänzt", f"Setze {unit}", conf)
+                if not existing_unit: 
+                    # NUR wenn wirklich nichts gefunden wurde, greift die Inferenz
+                    if found_unit and confidence >= 0.95:
+                        ln = ln[:30] + found_unit.ljust(4) + ln[34:]
+                        audit.add_finding(current_oz, "Einheit ergänzt", f"Setze {found_unit}", confidence)
                     else:
                         audit.add_finding(current_oz, "Einheit fehlt", "MANUELL", 0.50)
                 else:
-                    # Einheit ist bereits in der Zeile vorhanden -> KEIN Audit-Eintrag
-                    pass
-
-        # SA 45/46 - Langtexte neutralisieren
+                    # Einheit ist da (vielleicht verschoben) -> In Spalte 30 fixieren
+                    ln = ln[:30] + existing_unit.ljust(4) + ln[34:]
+        
         elif ln.startswith(("45", "46")) and user_options.get("neutralize"):
             ln = ln[:2] + apply_neutralization(ln[2:], rules)[2:]
 
