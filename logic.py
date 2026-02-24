@@ -547,14 +547,14 @@ def repair_stream_generator(file_content, user_options, rules):
     audit = AuditReport()
     lines = file_content.splitlines()
     repaired_lines = []
-    current_oz = "Header"
+    current_oz = "Vorlauf"
 
     for i, line in enumerate(lines):
         ln = line.ljust(80)[:80]
         
         # FIX: SA 43 - Marken-Interceptor für Kurztexte
         if ln.startswith("43"):
-            current_oz = ln[2:11].strip()
+            current_oz = ln[2:11].strip() or "Strukturfehler"
             audit.total_positions += 1
             if user_options.get("neutralize"):
                 prefix = ln[:11] # SA + OZ schützen
@@ -566,7 +566,7 @@ def repair_stream_generator(file_content, user_options, rules):
         # FIX: SA 44 - Heilung der Einheiten-Blindheit
         elif ln.startswith("44"):
             # 1. Check Standard-Position (30-34)
-            existing_unit = ln[30:34].strip()
+            detected_unit, confidence = detect_unit_confidence(ln, rules)
             
             # 2. Vicious-Scan: Wenn 30-34 leer ist, suchen wir in der restlichen Zeile
             if not existing_unit:
@@ -605,14 +605,26 @@ def repair_stream_generator(file_content, user_options, rules):
 def apply_neutralization(text, rules):
     """Ersetzt Markennamen direkt, um Vicious-Tests zu bestehen."""
     if not text: return ""
-    modified = text
+    modified = text.strip()
     brands = rules.get("brands", [])
-    neut = rules.get("neutralizers", ["o. glw."])[0]
+    neutralizers = rules.get("neutralizers", ["o. glw.", "oder gleichwertig"])
+    primary_neut = neutralizers[0]
     
+    has_neut = any(n.lower() in modified.lower() for n in neutralizers)
     for brand in brands:
-        # re.sub ersetzt die Marke durch den Neutralisator
         if re.search(rf"\b{re.escape(brand)}\b", modified, re.I):
-            modified = re.sub(rf"\b{re.escape(brand)}\b", neut, modified, flags=re.I)
+            if has_neut:
+                # Marke vorhanden + Neutralisator vorhanden -> Marke restlos entfernen
+                modified = re.sub(rf"\b{re.escape(brand)}\b", "", modified, flags=re.I).strip()
+            else:
+                # Marke vorhanden + KEIN Neutralisator -> Ersetzen durch Primär-Neut
+                # Platz schaffen für Neutralisator (80 - Länge Neutralisator - Struktur-Puffer)
+                max_len = 80 - len(primary_neut) - 15 
+                shortened_text = modified[:max_len].strip()
+                modified = re.sub(rf"\b{re.escape(brand)}\b", primary_neut, shortened_text, flags=re.I)
+                if primary_neut.lower() not in modified.lower():
+                    modified = f"{modified} {primary_neut}"
+                has_neut = True
     
     return modified.ljust(80)[:80]
 
@@ -644,19 +656,26 @@ def fix_units_with_95_percent_guard(text, current_unit, rules, audit, item_id):
         return None # Feld bleibt leer in der GAEB-Datei
 
 def detect_unit_confidence(text, rules):
-    """Kern der 95%-Regel für Einheiten."""
+    """
+    Erkennt Einheiten auch bei Spalten-Verschiebung (Displacement Sieg).
+    """
     inf_rules = rules.get("unit_inference_rules", {})
-    if not text or not inf_rules:
-        return None, 0.50
+    if not text or not inf_rules: return None, 0.50
+    # 1. DIREKT-SCAN: Suchen nach dem Einheiten-String selbst (verschobene Spalten)
+    for unit in inf_rules.keys():
+        # Sucht nach Einheiten wie 'm2', 'St', 'm3' isoliert im Text
+        if re.search(rf"\b{re.escape(unit)}\b", text, re.I):
+            return unit, 0.99 # Direkter Treffer ist extrem sicher!
+            
+    # 2. KEYWORD-INFERENZ: Falls keine Einheit da ist, raten wir über Keywords
     matches = []
     for unit, keywords in inf_rules.items():
         if any(k.lower() in text.lower() for k in keywords):
             matches.append(unit)
     
-    # Eindeutigkeits-Check für Jürgen
     if len(matches) == 1:
-        return matches[0], 0.98  # Sicher!
-    return None, 0.50  # Zu unsicher -> ROT    
+        return matches[0], 0.98
+    return None, 0.50    
 
 class AuditPDF(FPDF):
     """Definition der PDF-Struktur."""
